@@ -187,7 +187,7 @@ an error if there are no bundled assets available.
 
 The default value is "1" in L<production mode|Mojolicious/mode>.
 
-This feauture is EXPERIMENTAL. Feedback wanted.
+This feauture is EXPERIMENTAL. L<Feedback wanted|https://github.com/jhthorsen/mojolicious-plugin-assetpack/issues>.
 
 =head2 minify
 
@@ -324,7 +324,7 @@ sub preprocessor {
   $preprocessor = $class->new($args);
 
   for my $ext (@{$args->{extensions}}) {
-    warn "[ASSETPACK] Adding $class preprocessor.\n" if DEBUG;
+    warn "[ASSETPACK] Manually adding $class preprocessor.\n" if DEBUG;
     $self->preprocessors->on($ext => $preprocessor);
   }
 
@@ -377,6 +377,7 @@ sub register {
   my ($self, $app, $config) = @_;
   my $helper = $config->{helper} || 'asset';
 
+  $self->{mode} = $app->mode;
   $self->fallback($config->{fallback} // $app->mode eq 'production');
   $self->minify($config->{minify}     // $app->mode eq 'production');
   $self->base_url($config->{base_url}) if $config->{base_url};
