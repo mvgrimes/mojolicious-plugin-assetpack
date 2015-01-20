@@ -161,6 +161,7 @@ How C<require()> works in JavaScript.
 =cut
 
 use Mojo::Base 'Mojolicious::Plugin::AssetPack::Preprocessor';
+use Mojo::Asset::File;
 use Mojo::JSON ();
 use Mojo::Util;
 use Cwd ();
@@ -168,6 +169,7 @@ use File::Basename qw( basename dirname );
 use File::Spec::Functions 'catfile';
 use File::Which ();
 use constant DEBUG => $ENV{MOJO_ASSETPACK_DEBUG} || 0;
+use constant MODULE_DEPS_BIN => catfile(dirname(__FILE__), 'module-deps.js');
 
 BEGIN {
   (eval 'require JSON::XS;1' ? 'JSON::XS' : 'Mojo::JSON')->import(qw( decode_json encode_json ));
@@ -257,7 +259,7 @@ sub checksum {
   local $self->{skip_system_node_module_scan} = 1;
   $self->_set_node_module_paths;    # make sure we have a clean path list on each run
   $self->_find_node_modules($text, $path, $map);
-  Mojo::Util::md5_sum($$text, join '', map { Mojo::Util::slurp($map->{$_}) } sort keys %$map);
+  Mojo::Util::md5_sum($$text, join '', map { Mojo::Util::slurp($map->{$_}{file}) } sort keys %$map);
 }
 
 =head2 process
@@ -275,8 +277,11 @@ Pull requests are welcome to fix this.
 sub process {
   my ($self, $assetpack, $text, $path) = @_;
   my @transformers = @{$self->transformers};
-  my %changed = ($path => 1);
-  my ($cache, $cache_path, $err);
+  my $skip         = Mojo::Asset::File->new;
+  my ($old_cache, $cache_path, $err, %skip);
+
+  $self->_find_node_modules($text, $path, \%skip);    # install node deps
+  warn Data::Dumper::Dumper(\%skip);
 
   local $ENV{NODE_ENV} = $ENV{NODE_ENV} || $assetpack->{mode};
   warn "[Browserify] NODE_ENV=$ENV{NODE_ENV}\n" if DEBUG;
@@ -285,14 +290,15 @@ sub process {
   warn "[Browserify] NODE_PATH=$ENV{NODE_PATH}\n" if DEBUG;
 
   $cache_path = catfile(dirname($path), sprintf '.%s.%s.cache', basename($path), $ENV{NODE_ENV});
-  $cache = -r $cache_path ? decode_json(Mojo::Util::slurp $cache_path) : {};
+  $old_cache = -r $cache_path ? decode_json(Mojo::Util::slurp $cache_path) : {};
 
-  for my $file (keys %$cache) {
+  for my $file (keys %$old_cache) {
     my @stat = stat $file;
-    delete $cache->{$file} unless @stat;
-    $changed{$file} = 1 if @stat and $cache->{$file}{mtime} != $stat[9];
+    delete $old_cache->{$file} unless @stat;
+    $skip{$file} = {deps => {}} if @stat and $old_cache->{$file}{mtime} == $stat[9];
   }
 
+  $skip->add_chunk(encode_json \%skip);
   push @transformers, 'uglifyify' if $assetpack->minify;
   local $ENV{MODULE_DEPS_TRANSFORMERS} = encode_json(\@transformers);
   warn "[Browserify] MODULE_DEPS_TRANSFORMERS=$ENV{MODULE_DEPS_TRANSFORMERS}\n" if DEBUG;
@@ -300,9 +306,8 @@ sub process {
   $self->_install_node_module($_) for qw( browser-pack module-deps JSONStream );
   $self->_install_node_module($_) for @{$self->dependencies};
   $self->_install_node_module($_) for map { ref $_ ? $_->[0] : $_ } @transformers;
-  $self->_find_node_modules($text, $path, {});    # install node deps
-  $self->_run([$self->executable, catfile(dirname(__FILE__), 'module-deps.js'), keys %changed], undef, $text, \$err);
-  $self->_apply_cache($cache, $text, $cache_path) unless $err;
+  $self->_run([$self->executable, MODULE_DEPS_BIN, $path, $skip->path], undef, $text, \$err);
+  $self->_apply_cache($old_cache, $text, $cache_path) unless $err;
   $self->_run([$self->executable, $self->_node_module_path(qw( .bin browser-pack ))], $text, $text, \$err) unless $err;
   $self->_make_js_error($err, $text) if $err;
   $self;
@@ -345,8 +350,6 @@ sub _find_node_modules {
       ? $self->_follow_system_node_module($module, $path, $uniq)
       : $self->_follow_relative_node_module($module, $path, $uniq);
   }
-
-  return keys %$uniq;
 }
 
 sub _follow_relative_node_module {
@@ -359,11 +362,13 @@ sub _follow_relative_node_module {
 
   for my $ext ('', '.js', '.jsx', '.coffee') {
     my $file = catfile(split '/', "$base$ext");
+    my $deps = {};
     return if $uniq->{"$module$ext"};
     next unless -f $file;
-    $uniq->{"$module$ext"} = $file;
+    $uniq->{"$module$ext"} = {file => $file, deps => $deps};
     my $js = Mojo::Util::slurp($file);
-    return $self->_find_node_modules(\$js, $file, $uniq);
+    $self->_find_node_modules(\$js, $file, $deps);
+    return @$uniq{(keys %$deps)} = values %$deps;
   }
 
   die "Could not find JavaScript module '$module'";
