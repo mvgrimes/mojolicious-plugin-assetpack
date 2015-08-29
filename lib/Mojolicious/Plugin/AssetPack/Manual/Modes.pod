@@ -38,6 +38,41 @@ TIP! Make morbo watch your less/sass files as well:
 You can also set the L<MOJO_ASSETPACK_NO_CACHE|Mojolicious::Plugin::AssetPack/MOJO_ASSETPACK_NO_CACHE>
 environment variable to "1" to pack your assets on each request.
 
+=head2 Fallback mode
+
+This is not a L<Mojolicious> mode, but rather a mode AssetPack can go into
+if third party libraries or preprocessors are missing.
+
+The idea is that if you ship an application, the application should be able
+to find the compiled assets, even though if AssetPack change the algorithm
+for calculating the MD5 sum. You should also be able to use plugins while
+developing that is not required for starting the application in production.
+
+AssetPack will create a "assetpack.json" file on each run which document
+which packed file an asset point to. This file is I<only> used in fallback
+mode to figure out which packed file to use.
+
+Optional plugins can be specified while registering AssetPack:
+
+  $app->plugin(
+    AssetPack => {
+      plugins => [
+        "RiotJs",
+        "Bootstrap3" => {js => [], custom => 1},
+      }
+    }
+  );
+
+The code above will load L<Mojolicious::Plugin::RiotJs> and
+L<Mojolicious::Plugin::Bootstrap3> if they are available. AssetPack will go
+into fallback mode if they fail to load.
+
+AssetPack will also go into fallback mode if third party tools are missing
+(such as "sass" or "less").
+
+Not that this feauture is EXPERIMENTAL, and will be removed if it is
+causing problems with existing running code.
+
 =head1 AUTHOR
 
 Jan Henning Thorsen - C<jhthorsen@cpan.org>

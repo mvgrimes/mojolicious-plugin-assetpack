@@ -104,6 +104,14 @@ sub register {
   $self->base_url($config->{base_url}) if $config->{base_url};
   $self->_reloader($app, $config->{reloader}) if $config->{reloader};
 
+  $self->{fallback_assets} = do {
+    require Mojo::JSON;
+    my $map = File::Spec->catdir($self->out_dir, 'assetpack.json');
+    -r $map ? Mojo::JSON::decode_json(Mojo::Util::slurp($map)) : {};
+  };
+
+  $self->_load_plugins(@{$config->{plugins} || []});
+
   if (NO_CACHE) {
     $app->log->info('AssetPack Will rebuild assets on each request in memory');
     $self->out_dir('');
@@ -269,9 +277,27 @@ sub _make_error_asset {
   }
 }
 
+sub _load_plugins {
+  my $self = shift;
+  my $app  = $self->_app;
+  my $i    = 0;
+
+  while ($i < @_) {
+    my $plugin = $_[$i] or last;
+    my $args = ref $_[$i + 1] ? $_[$i + 1] : undef;
+    unless (eval { $app->plugin($plugin => $args || {}); 1 }) {
+      die $@ unless keys %{$self->{fallback_assets}};
+      $app->log->warn("AssetPack going into fallback mode." . (DEBUG ? $@ : ''));
+    }
+    $i += $args ? 2 : 1;
+  }
+}
+
 sub _packed {
   my $self = shift;
-  my $needle = ref $_[0] ? shift : _name(shift);
+  my $needle = shift or return undef;
+
+  $needle = _name($needle) unless ref $needle;
 
   for my $path (map { File::Spec->catdir($_, 'packed') } @{$self->_app->static->paths}) {
     opendir my $DH, $path or next;
@@ -290,6 +316,7 @@ sub _process {
   my ($self, $moniker, @sources) = @_;
   my ($name, $ext) = (_name($moniker), _ext($moniker));
   my ($asset, $file, @checksum);
+  my $fallback = 0;
 
   @sources = map {
     my $source = $self->_source_for_url($_);
@@ -316,8 +343,13 @@ sub _process {
       warn "[ASSETPACK] process(@{[$source->path]}) FAIL $e\n" if DEBUG;
       $asset->path(File::Spec->catfile($self->out_dir, "$name-$checksum[0].err.$ext"));
       $asset->content($self->_make_error_asset($moniker, $source->basename, $e || 'Unknown error'));
+      $fallback = 1;
       last;
     };
+  }
+
+  if ($fallback and $fallback = $self->_packed($self->{fallback_assets}{$file})) {
+    $asset = $fallback;
   }
 
   unless ($self->{hook_added}++) {
@@ -338,8 +370,11 @@ sub _process {
     }
   }
 
-  $asset->in_memory(!$self->out_dir)->save;
-  $self->_app->log->info("Built asset for $moniker");
+  unless ($fallback) {
+    $asset->in_memory(!$self->out_dir)->save;
+    $self->_app->log->info("Built asset for $moniker");
+  }
+
   $asset;
 }
 
@@ -621,12 +656,16 @@ This method is EXPERIMENTAL and can change or be removed at any time.
     base_url     => $str,     # default to "/packed"
     headers      => {"Cache-Control" => "max-age=31536000"},
     minify       => $bool,    # compress assets
+    plugins      => [...],
     proxy        => "detect", # autodetect proxy settings
     out_dir      => "/path/to/some/directory",
     source_paths => [...],
   };
 
 Will register the C<asset> helper. All L<arguments|/ATTRIBUTES> are optional.
+
+See L<Mojolicious::Plugin::AssetPack::Manual::Modes/Fallback mode> regarding
+"plugins".
 
 =head2 source_paths
 
