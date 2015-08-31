@@ -26,10 +26,10 @@ my ($embedded, $main);
 }
 
 {
-  $embedded->get_ok("/packed/app-$md5.min.js")->status_is(200)->content_is('var too = "cool";');
+  $embedded->get_ok("/packed/app-$md5.min.js")->status_is(200)->content_is(qq(var too = "cool";\n));
   $main->get_ok("/main")->status_is(200)->content_is('main');
   $main->get_ok("/embed")->status_is(200)->content_is('Embedded');
-  $main->get_ok("/embed/packed/app-$md5.min.js")->status_is(200)->content_is('var too = "cool";');
+  $main->get_ok("/embed/packed/app-$md5.min.js")->status_is(200)->content_is(qq(var too = "cool";\n));
 }
 
 is getcwd, $working_dir, 'did not change directory';

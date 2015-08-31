@@ -27,7 +27,7 @@ use t::Helper;
   $t->get_ok('/test1')->status_is(200)
     ->content_like(qr{<link href="/packed/app-3659f2c6b80de93f8373568a1ddeffaa\.min\.css"}m);
 
-  $t->get_ok($t->tx->res->dom->at('link')->{href})->status_is(200)->content_like(qr{c1c1c1.*d1d1d1});
+  $t->get_ok($t->tx->res->dom->at('link')->{href})->status_is(200)->content_like(qr{c1c1c1.*d1d1d1}s);
 }
 
 {

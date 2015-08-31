@@ -309,7 +309,7 @@ sub _process {
     eval {
       my $content = $source->slurp;
       $self->preprocessors->process(_ext($source->path), $self, \$content, $source->path);
-      $asset->content($asset->content . $content);
+      $asset->content($asset->content . ((!length $content or $content =~ /\n$/) ? $content : "$content\n"));
       1;
     } or do {
       my $e = $@;

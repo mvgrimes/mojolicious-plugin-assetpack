@@ -24,7 +24,7 @@ $t->app->plugin('t::SomePluginWithAssets');
 is $t->app->asset, $assetpack, 'same assetpack';
 
 $t->get_ok('/test1')->status_is(200)->content_like(qr/body\{color:\#aaa\}body\{color:\#aaa\}/)
-  ->content_like(qr/body\{color:\#bbb\}body\{color:\#bbb\}/);
+  ->content_like(qr/body\{color:\#bbb\}\nbody\{color:\#bbb\}/);
 
 my @href = $t->tx->res->dom->find('link')->map(sub { $_->{href} })->each;
 my @names = map { File::Basename::basename($_) } @href;
